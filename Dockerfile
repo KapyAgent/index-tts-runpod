@@ -15,6 +15,7 @@ ENV MODEL_DIR="checkpoints/IndexTTS-2-vLLM"
 ENV IS_FP16="true"
 ENV GPU_MEMORY_UTILIZATION=0.25
 ENV QWENEMO_GPU_MEMORY_UTILIZATION=0.10
+ENV PYTHONPATH="${PYTHONPATH}:/app"
 
 # Override entrypoint to run the handler
 ENTRYPOINT ["python", "-u", "handler.py"]

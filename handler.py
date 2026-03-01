@@ -1,11 +1,26 @@
+import os
+import sys
+
+# Debug: list files in /app to see where indextts is
+print(f"DEBUG: CWD: {os.getcwd()}")
+print(f"DEBUG: Files in /app: {os.listdir('/app')}")
+print(f"DEBUG: sys.path: {sys.path}")
+
 import runpod
 import base64
 import io
 import soundfile as sf
-import os
 import requests
 import uuid
-from indextts.infer_vllm_v2 import IndexTTS2
+
+try:
+    from indextts.infer_vllm_v2 import IndexTTS2
+except ImportError as e:
+    print(f"ERROR: Failed to import indextts: {e}")
+    # Try to find it
+    import glob
+    print(f"DEBUG: Searching for indextts: {glob.glob('**/indextts', recursive=True)}")
+    raise
 
 # Initialize the model outside the handler for warm starts
 model_dir = os.getenv("MODEL_DIR", "checkpoints/IndexTTS-2-vLLM")
@@ -30,13 +45,6 @@ def download_file(url, save_path):
     return False
 
 def process_audio_input(audio_input, temp_dir="/tmp"):
-    """
-    Process audio input which can be:
-    1. A URL (starting with http:// or https://)
-    2. A base64 encoded string
-    3. A base64 data URI (starting with data:audio/)
-    4. A local file path (though unlikely in serverless)
-    """
     if not audio_input:
         return None
         
@@ -57,7 +65,6 @@ def process_audio_input(audio_input, temp_dir="/tmp"):
         except Exception:
             return None
             
-    # Try raw base64
     try:
         decoded = base64.b64decode(audio_input)
         local_path = os.path.join(temp_dir, f"{uuid.uuid4()}.wav")
@@ -65,14 +72,9 @@ def process_audio_input(audio_input, temp_dir="/tmp"):
             f.write(decoded)
         return local_path
     except Exception:
-        # If all else fails, assume it's a local path or invalid
         return audio_input
 
 async def handler(job):
-    """
-    The handler function that will be called by RunPod.
-    job['input'] contains the parameters sent by the user.
-    """
     job_input = job['input']
     
     text = job_input.get("text")
@@ -85,11 +87,9 @@ async def handler(job):
     emo_random = job_input.get("emo_random", False)
     max_text_tokens_per_sentence = job_input.get("max_text_tokens_per_sentence", 120)
 
-    # Process audio inputs (URL or Base64)
     spk_audio_path = process_audio_input(spk_audio_input)
     emo_ref_path = process_audio_input(emo_ref_input)
 
-    # Process emo_control_method logic similar to api_server_v2.py
     if emo_control_method == 0:
         emo_ref_path = None
         emo_weight = 1.0
@@ -115,7 +115,6 @@ async def handler(job):
             max_text_tokens_per_sentence=int(max_text_tokens_per_sentence)
         )
         
-        # Cleanup temporary files
         for p in [spk_audio_path, emo_ref_path]:
             if p and p.startswith("/tmp/") and os.path.exists(p):
                 try: os.remove(p)
