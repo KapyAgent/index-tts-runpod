@@ -2,7 +2,10 @@
 FROM seastart/index-tts-vllm:latest
 
 # Install runpod SDK
-RUN pip install runpod
+RUN pip install --no-cache-dir --break-system-packages runpod
+
+# Ensure we are in /app where indextts is located
+WORKDIR /app
 
 # Copy our handler
 COPY handler.py .
