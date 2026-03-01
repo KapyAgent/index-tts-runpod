@@ -3,6 +3,8 @@ import base64
 import io
 import soundfile as sf
 import os
+import requests
+import uuid
 from indextts.infer_vllm_v2 import IndexTTS2
 
 # Initialize the model outside the handler for warm starts
@@ -18,6 +20,54 @@ tts = IndexTTS2(
     qwenemo_gpu_memory_utilization=qwenemo_gpu_memory_utilization,
 )
 
+def download_file(url, save_path):
+    response = requests.get(url, stream=True)
+    if response.status_code == 200:
+        with open(save_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        return True
+    return False
+
+def process_audio_input(audio_input, temp_dir="/tmp"):
+    """
+    Process audio input which can be:
+    1. A URL (starting with http:// or https://)
+    2. A base64 encoded string
+    3. A base64 data URI (starting with data:audio/)
+    4. A local file path (though unlikely in serverless)
+    """
+    if not audio_input:
+        return None
+        
+    if audio_input.startswith(("http://", "https://")):
+        local_path = os.path.join(temp_dir, f"{uuid.uuid4()}.wav")
+        if download_file(audio_input, local_path):
+            return local_path
+        return None
+        
+    if audio_input.startswith("data:audio/"):
+        try:
+            _, encoded = audio_input.split(",", 1)
+            decoded = base64.b64decode(encoded)
+            local_path = os.path.join(temp_dir, f"{uuid.uuid4()}.wav")
+            with open(local_path, "wb") as f:
+                f.write(decoded)
+            return local_path
+        except Exception:
+            return None
+            
+    # Try raw base64
+    try:
+        decoded = base64.b64decode(audio_input)
+        local_path = os.path.join(temp_dir, f"{uuid.uuid4()}.wav")
+        with open(local_path, "wb") as f:
+            f.write(decoded)
+        return local_path
+    except Exception:
+        # If all else fails, assume it's a local path or invalid
+        return audio_input
+
 async def handler(job):
     """
     The handler function that will be called by RunPod.
@@ -26,14 +76,18 @@ async def handler(job):
     job_input = job['input']
     
     text = job_input.get("text")
-    spk_audio_path = job_input.get("spk_audio_path")
+    spk_audio_input = job_input.get("spk_audio_path")
     emo_control_method = job_input.get("emo_control_method", 0)
-    emo_ref_path = job_input.get("emo_ref_path", None)
+    emo_ref_input = job_input.get("emo_ref_path", None)
     emo_weight = job_input.get("emo_weight", 1.0)
     emo_vec = job_input.get("emo_vec", None)
     emo_text = job_input.get("emo_text", None)
     emo_random = job_input.get("emo_random", False)
     max_text_tokens_per_sentence = job_input.get("max_text_tokens_per_sentence", 120)
+
+    # Process audio inputs (URL or Base64)
+    spk_audio_path = process_audio_input(spk_audio_input)
+    emo_ref_path = process_audio_input(emo_ref_input)
 
     # Process emo_control_method logic similar to api_server_v2.py
     if emo_control_method == 0:
@@ -61,6 +115,12 @@ async def handler(job):
             max_text_tokens_per_sentence=int(max_text_tokens_per_sentence)
         )
         
+        # Cleanup temporary files
+        for p in [spk_audio_path, emo_ref_path]:
+            if p and p.startswith("/tmp/") and os.path.exists(p):
+                try: os.remove(p)
+                except: pass
+
         with io.BytesIO() as wav_buffer:
             sf.write(wav_buffer, wav, sr, format='WAV')
             wav_bytes = wav_buffer.getvalue()
