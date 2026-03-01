@@ -1,10 +1,24 @@
 import os
 import sys
+from pathlib import Path
 
-# Debug: list files in /app to see where indextts is
-print(f"DEBUG: CWD: {os.getcwd()}")
-print(f"DEBUG: Files in /app: {os.listdir('/app')}")
-print(f"DEBUG: sys.path: {sys.path}")
+def bootstrap_indextts_path():
+    candidates = [
+        "/opt/index-tts",
+        "/app",
+        "/workspace",
+    ]
+    for root in candidates:
+        if (Path(root) / "indextts").is_dir():
+            if root not in sys.path:
+                sys.path.insert(0, root)
+            return root
+    raise ModuleNotFoundError(
+        f"indextts package directory not found. Checked: {candidates}"
+    )
+
+INDEXTTS_ROOT = bootstrap_indextts_path()
+print(f"INFO: Using indextts from {INDEXTTS_ROOT}")
 
 import runpod
 import base64
@@ -17,9 +31,11 @@ try:
     from indextts.infer_vllm_v2 import IndexTTS2
 except ImportError as e:
     print(f"ERROR: Failed to import indextts: {e}")
-    # Try to find it
-    import glob
-    print(f"DEBUG: Searching for indextts: {glob.glob('**/indextts', recursive=True)}")
+    for root in ["/opt/index-tts", "/app", "/workspace"]:
+        print(
+            f"DEBUG: {root}/indextts exists="
+            f"{(Path(root) / 'indextts').is_dir()}"
+        )
     raise
 
 # Initialize the model outside the handler for warm starts
