@@ -46,13 +46,15 @@ PY
 # Keep runtime code away from /app in case serverless runtime overlays /app.
 WORKDIR /worker
 COPY handler.py /worker/handler.py
+COPY handler.py /handler.py
+COPY handler.py /app/handler.py
 
 # Set environment variables (can be overridden at runtime)
 ENV MODEL_DIR=""
 ENV IS_FP16="true"
 ENV GPU_MEMORY_UTILIZATION=0.25
 ENV QWENEMO_GPU_MEMORY_UTILIZATION=0.10
-ENV PYTHONPATH="/opt/index-tts:/worker"
+ENV PYTHONPATH="/opt/index-tts:/worker:/app:/"
 
 # RunPod serverless handler
 ENTRYPOINT ["python3", "-u", "/worker/handler.py"]

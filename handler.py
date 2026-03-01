@@ -10,6 +10,31 @@ import soundfile as sf
 import requests
 import uuid
 
+def log_runtime_snapshot():
+    print(f"INFO: handler_file={Path(__file__).resolve()}")
+    print(f"INFO: executable={sys.executable}")
+    print(f"INFO: cwd={os.getcwd()}")
+    print(f"INFO: env.PYTHONPATH={os.getenv('PYTHONPATH', '')}")
+    print(f"INFO: sys.path={sys.path}")
+
+    inspect_dirs = [
+        Path("/"),
+        Path("/app"),
+        Path("/worker"),
+        Path("/opt/index-tts"),
+        Path("/opt/index-tts/indextts"),
+    ]
+    for d in inspect_dirs:
+        exists = d.exists()
+        is_dir = d.is_dir()
+        sample = []
+        if is_dir:
+            try:
+                sample = sorted([p.name for p in d.iterdir()])[:12]
+            except Exception as e:
+                sample = [f"<list_failed:{e}>"]
+        print(f"INFO: dir={d} exists={exists} is_dir={is_dir} sample={sample}")
+
 def bootstrap_indextts_import():
     existing = importlib.util.find_spec("indextts")
     if existing is not None:
@@ -55,6 +80,7 @@ def resolve_model_dir():
             return path
     return "checkpoints/IndexTTS-2-vLLM"
 
+log_runtime_snapshot()
 INDEXTTS_SOURCE = bootstrap_indextts_import()
 
 try:
