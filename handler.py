@@ -1,4 +1,7 @@
 import os
+import sys
+from pathlib import Path
+import importlib.util
 
 import runpod
 import base64
@@ -7,19 +10,70 @@ import soundfile as sf
 import requests
 import uuid
 
+def bootstrap_indextts_import():
+    existing = importlib.util.find_spec("indextts")
+    if existing is not None:
+        return f"installed:{existing.origin}"
+
+    candidates = [
+        Path("/opt/index-tts"),
+        Path("/app"),
+        Path("/workspace"),
+        Path("/src"),
+    ]
+    checked = []
+    for root in candidates:
+        has_module = (root / "indextts").is_dir()
+        checked.append((str(root), has_module))
+        if has_module:
+            root_str = str(root)
+            if root_str not in sys.path:
+                sys.path.insert(0, root_str)
+            probe = importlib.util.find_spec("indextts")
+            if probe is not None:
+                return f"path:{root_str}"
+
+    details = ", ".join([f"{root}={exists}" for root, exists in checked])
+    raise ModuleNotFoundError(
+        "No module named 'indextts'. Checked package import and source dirs: "
+        f"{details}. sys.path={sys.path}"
+    )
+
+def resolve_model_dir():
+    env_model_dir = os.getenv("MODEL_DIR", "").strip()
+    if env_model_dir:
+        return env_model_dir
+
+    candidates = [
+        "/app/checkpoints/IndexTTS-2-vLLM",
+        "/workspace/checkpoints/IndexTTS-2-vLLM",
+        "/opt/index-tts/checkpoints/IndexTTS-2-vLLM",
+        "checkpoints/IndexTTS-2-vLLM",
+    ]
+    for path in candidates:
+        if Path(path).exists():
+            return path
+    return "checkpoints/IndexTTS-2-vLLM"
+
+INDEXTTS_SOURCE = bootstrap_indextts_import()
+
 try:
     from indextts.infer_vllm_v2 import IndexTTS2
 except ImportError as e:
     print(f"ERROR: Failed to import indextts: {e}")
     print(f"DEBUG: CWD: {os.getcwd()}")
     print(f"DEBUG: PYTHONPATH: {os.getenv('PYTHONPATH', '')}")
+    print(f"DEBUG: sys.path: {sys.path}")
     raise
 
 # Initialize the model outside the handler for warm starts
-model_dir = os.getenv("MODEL_DIR", "checkpoints/IndexTTS-2-vLLM")
+model_dir = resolve_model_dir()
 is_fp16 = os.getenv("IS_FP16", "true").lower() == "true"
 gpu_memory_utilization = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.25"))
 qwenemo_gpu_memory_utilization = float(os.getenv("QWENEMO_GPU_MEMORY_UTILIZATION", "0.10"))
+
+print(f"INFO: indextts source: {INDEXTTS_SOURCE}")
+print(f"INFO: model_dir: {model_dir}")
 
 tts = IndexTTS2(
     model_dir=model_dir,
